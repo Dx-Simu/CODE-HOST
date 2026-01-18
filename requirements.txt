@@ -1,7 +1,5 @@
 pyrogram
 tgcrypto
 motor
-dnspython
-aiohttp
-uvloop
-aiofiles
+flask
+requests
