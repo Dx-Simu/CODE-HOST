@@ -30,7 +30,7 @@ groups_col = db["groups"]
 
 app = Client("JoinRemoverBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# --- KEEP ALIVE SYSTEM (RENDER) ---
+# --- KEEP ALIVE SYSTEM ---
 web_app = Flask(__name__)
 
 @web_app.route('/')
@@ -69,11 +69,11 @@ def parse_buttons(text):
             buttons.append([InlineKeyboardButton(match.group(1).strip(), url=match.group(2).strip())])
     return buttons if buttons else None
 
-# ADDED 'manage_chat' PERMISSION HERE
 ADD_ME_LINK = f"https://t.me/{{}}?startgroup=true&admin=delete_messages+invite_users+manage_video_chats+manage_chat+pin_messages"
 
 # --- HANDLERS ---
 
+# Auto Service Message Remover
 @app.on_message(filters.service & filters.group)
 async def delete_service_msgs(_, message: Message):
     try:
@@ -81,6 +81,7 @@ async def delete_service_msgs(_, message: Message):
     except:
         pass
 
+# Start Command
 @app.on_message(filters.command("start") & filters.private)
 async def start_handler(_, message: Message):
     user_id = message.from_user.id
@@ -107,14 +108,42 @@ async def start_handler(_, message: Message):
     await message.reply_text(
         f"<b>✨ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ {BOT_NAME} ✨</b>\n\n"
         f"<blockquote>ɪ ᴀᴍ ɴᴏᴡ ᴀᴄᴛɪᴠᴇ ᴀɴᴅ ʀᴇᴀᴅʏ ᴛᴏ ᴄʟᴇᴀɴ ʏᴏᴜʀ ɢʀᴏᴜᴘs. ᴀᴅᴅ ᴍᴇ ᴀɴᴅ ᴍᴀᴋᴇ ᴍᴇ ᴀᴅᴍɪɴ ᴡɪᴛʜ ᴅᴇʟᴇᴛᴇ ᴘᴇʀᴍɪssɪᴏɴ.</blockquote>\n\n"
-        f"<b>🚀 sᴛᴀᴛᴜs:</b> <code>ᴀᴄᴛɪᴠᴇ</code>\n"
-        f"<b>🛡️ ᴘᴏᴡᴇʀ:</b> <code>ғᴜʟʟ ᴀᴄᴄᴇss</code>\n\n"
+        f"<b>🚀 sᴛᴀᴛᴜs:</b> <code>ᴀᴄᴛɪᴠᴇ</code>\n\n"
         f"<b>👤 ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("➕ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ", url=add_link)]
         ])
     )
 
+# Group ID Save & Advanced Greeting Logic
+@app.on_message(filters.new_chat_members)
+async def on_join_group(_, message: Message):
+    me = await app.get_me()
+    # Check if the bot itself is added
+    if any(m.id == me.id for m in message.new_chat_members):
+        chat_id = message.chat.id
+        chat_title = message.chat.title
+        
+        # Force Save to Database
+        if not await groups_col.find_one({"_id": chat_id}):
+            await groups_col.insert_one({"_id": chat_id, "title": chat_title})
+            db_status = "✅ sᴀᴠᴇᴅ ᴛᴏ ᴅᴀᴛᴀʙᴀsᴇ"
+        else:
+            db_status = "🔄 ᴀʟʀᴇᴀᴅʏ ɪɴ ᴅᴀᴛᴀʙᴀsᴇ"
+        
+        # Advanced Style Greeting Message
+        await message.reply_text(
+            f"<b>🛡️ {BOT_NAME} ɪs ɴᴏᴡ ᴏɴʟɪɴᴇ!</b>\n\n"
+            f"<blockquote>ʜᴇʟʟᴏ ᴇᴠᴇʀʏᴏɴᴇ! ɪ ᴀᴍ ʏᴏᴜʀ ᴀᴅᴠᴀɴᴄᴇᴅ ɢʀᴏᴜᴘ ᴍᴀɴᴀɢᴇʀ. ɪ ᴡɪʟʟ ᴀᴜᴛᴏ-ᴅᴇʟᴇᴛᴇ ᴀʟʟ sᴇʀᴠɪᴄᴇ ᴍᴇssᴀɢᴇs ᴛᴏ ᴋᴇᴇᴘ ᴛʜɪs ᴄʜᴀᴛ ᴄʟᴇᴀɴ.</blockquote>\n\n"
+            f"<b>📊 ɢʀᴏᴜᴘ ᴀɴᴀʟʏᴛɪᴄs:</b>\n"
+            f"📝 ᴛɪᴛʟᴇ: <b>{chat_title}</b>\n"
+            f"🆔 ɪᴅ: <code>{chat_id}</code>\n"
+            f"📁 ᴅʙ: <b>{db_status}</b>\n\n"
+            f"<b>⚠️ ɴᴏᴛᴇ:</b> ᴍᴀᴋᴇ sᴜʀᴇ ɪ ʜᴀᴠᴇ 'ᴅᴇʟᴇᴛᴇ ᴍᴇssᴀɢᴇs' ᴘᴇʀᴍɪssɪᴏɴ!\n\n"
+            f"<b>👤 ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>"
+        )
+
+# Callback & Other Commands (No changes below)
 @app.on_callback_query(filters.regex("verify_user"))
 async def verify_callback(_, query):
     me = await app.get_me()
@@ -124,68 +153,36 @@ async def verify_callback(_, query):
             f"<b>✅ ᴠᴇʀɪғɪᴄᴀᴛɪᴏɴ sᴜᴄᴄᴇssғᴜʟ!</b>\n\n"
             f"<blockquote>ʏᴏᴜ ᴄᴀɴ ɴᴏᴡ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ ᴀɴᴅ ᴇɴᴊᴏʏ sᴇʀᴠɪᴄᴇs.</blockquote>\n\n"
             f"<b>👤 ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("➕ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ", url=add_link)]
-            ])
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ", url=add_link)]])
         )
     else:
         await query.answer("⚠️ ᴘʟᴇᴀsᴇ ᴊᴏɪɴ ʙᴏᴛʜ ᴄʜᴀɴɴᴇʟs ғɪʀsᴛ!", show_alert=True)
 
-@app.on_message(filters.new_chat_members)
-async def on_join_group(_, message: Message):
-    me = await app.get_me()
-    if any(m.id == me.id for m in message.new_chat_members):
-        chat_id = message.chat.id
-        chat_title = message.chat.title
-        if not await groups_col.find_one({"_id": chat_id}):
-            await groups_col.insert_one({"_id": chat_id, "title": chat_title})
-        
-        await message.reply_text(
-            f"<b>🛡️ {BOT_NAME} ᴀᴄᴛɪᴠᴀᴛᴇᴅ!</b>\n\n"
-            f"<blockquote><b>ɢʀᴏᴜᴘ ᴅᴇᴛᴀɪʟs:</b>\n"
-            f"🆔 ɪᴅ: <code>{chat_id}</code>\n"
-            f"🏷️ ɴᴀᴍᴇ: <b>{chat_title}</b></blockquote>\n\n"
-            f"<b>✅ sᴛᴀᴛᴜs:</b> ᴄᴏɴɴᴇᴄᴛᴇᴅ ᴛᴏ ᴅᴀᴛᴀʙᴀsᴇ\n"
-            f"<b>👤 ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>"
-        )
-
 @app.on_message(filters.command("user") & filters.user(OWNER_ID))
 async def export_users(_, message: Message):
-    msg = await message.reply_text("<code>📊 ᴀɴᴀʟʏᴢɪɴɢ ᴅᴀᴛᴀʙᴀsᴇ... ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ.</code>")
+    msg = await message.reply_text("<code>📊 ᴀɴᴀʟʏᴢɪɴɢ ᴅᴀᴛᴀʙᴀsᴇ...</code>")
     count_u = await users_col.count_documents({})
     count_g = await groups_col.count_documents({})
-    
-    content = f"📈 ᴛᴏᴛᴀʟ ᴄᴏᴜɴᴛ: {count_u + count_g}\n\n"
-    content += "👤 --- ᴜsᴇʀ ʟɪsᴛ ---\n"
-    async for u in users_col.find({}): content += f"ID: {u['_id']} | @{u.get('username','N/A')}\n"
-    content += "\n👥 --- ɢʀᴏᴜᴘ ʟɪsᴛ ---\n"
-    async for g in groups_col.find({}): content += f"ID: {g['_id']} | {g.get('title','N/A')}\n"
-        
+    content = f"📈 ᴛᴏᴛᴀʟ: {count_u + count_g}\n\n👤 Users: {count_u}\n👥 Groups: {count_g}\n\n"
+    async for u in users_col.find({}): content += f"U: {u['_id']} | @{u.get('username','N/A')}\n"
+    async for g in groups_col.find({}): content += f"G: {g['_id']} | {g.get('title','N/A')}\n"
     with open("database.txt", "w", encoding="utf-8") as f: f.write(content)
-    await message.reply_document(
-        "database.txt", 
-        caption=f"<b>📁 ʙᴏᴛ ᴅᴀᴛᴀʙᴀsᴇ sᴛᴀᴛs</b>\n\n<blockquote>ᴛᴏᴛᴀʟ ᴜsᴇʀs: {count_u}\nᴛᴏᴛᴀʟ ɢʀᴏᴜᴘs: {count_g}</blockquote>\n\n<b>👤 ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>"
-    )
+    await message.reply_document("database.txt", caption=f"<b>📁 ᴅᴀᴛᴀʙᴀsᴇ sᴛᴀᴛs</b>\n\n<b>ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>")
     os.remove("database.txt")
     await msg.delete()
 
 @app.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
 async def broadcast_handler(_, message: Message):
     if not message.reply_to_message:
-        return await message.reply_text("<b>❌ ᴇʀʀᴏʀ: ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴍᴇssᴀɢᴇ ᴛᴏ ʙʀᴏᴀᴅᴄᴀsᴛ!</b>")
-    
+        return await message.reply_text("<b>❌ ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴍᴇssᴀɢᴇ!</b>")
     reply = message.reply_to_message
-    msg = await message.reply_text("<code>🚀 ɪɴɪᴛɪᴀᴛɪɴɢ ʙʀᴏᴀᴅᴄᴀsᴛ...</code>")
-    
+    msg = await message.reply_text("<code>🚀 ʙʀᴏᴀᴅᴄᴀsᴛɪɴɢ...</code>")
     ids = []
     async for u in users_col.find({}): ids.append(u["_id"])
     async for g in groups_col.find({}): ids.append(g["_id"])
-    
     text = reply.text or reply.caption or ""
-    parsed_btns = parse_buttons(text)
-    btn = InlineKeyboardMarkup(parsed_btns) if parsed_btns else None
+    btn = InlineKeyboardMarkup(parse_buttons(text)) if parse_buttons(text) else None
     clean_text = re.sub(r"\[.+?\|.+?\]", "", text).strip()
-    
     success = 0
     for target in list(set(ids)):
         try:
@@ -193,13 +190,7 @@ async def broadcast_handler(_, message: Message):
             success += 1
             await asyncio.sleep(0.3)
         except: pass
-
-    await msg.edit_text(
-        f"<b>📢 ʙʀᴏᴀᴅᴄᴀsᴛ ᴄᴏᴍᴘʟᴇᴛᴇᴅ!</b>\n\n"
-        f"<blockquote>✅ <b>sᴜᴄᴄᴇssғᴜʟ:</b> <code>{success}</code>\n"
-        f"❌ <b>ғᴀɪʟᴇᴅ:</b> <code>{len(list(set(ids))) - success}</code></blockquote>\n\n"
-        f"<b>👤 ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>"
-    )
+    await msg.edit_text(f"<b>📢 ʙʀᴏᴀᴅᴄᴀsᴛ ᴅᴏɴᴇ!</b>\n\n✅ <b>sᴜᴄᴄᴇss:</b> <code>{success}</code>\n<b>👤 ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>")
 
 if __name__ == "__main__":
     Thread(target=run_web).start()
