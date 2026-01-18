@@ -69,7 +69,8 @@ def parse_buttons(text):
             buttons.append([InlineKeyboardButton(match.group(1).strip(), url=match.group(2).strip())])
     return buttons if buttons else None
 
-ADD_ME_LINK = f"https://t.me/{{}}?startgroup=true&admin=delete_messages+invite_users+manage_video_chats"
+# ADDED 'manage_chat' PERMISSION HERE
+ADD_ME_LINK = f"https://t.me/{{}}?startgroup=true&admin=delete_messages+invite_users+manage_video_chats+manage_chat+pin_messages"
 
 # --- HANDLERS ---
 
