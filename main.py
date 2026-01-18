@@ -1,215 +1,175 @@
 import os
-import sys
+import re
 import asyncio
-import shutil
-import logging
+import requests
 import time
-import random
-import string
-import aiofiles # Async file handling for speed
-from pyrogram import Client, filters, idle
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
-from pyrogram.errors import MessageNotModified, FloodWait
+from threading import Thread
+from flask import Flask
+from pyrogram import Client, filters, enums
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
+from pyrogram.errors import UserNotParticipant
 from motor.motor_asyncio import AsyncIOMotorClient
-from aiohttp import web
 
-# --- LOGGING ---
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# --- CONFIG ---
+# --- CONFIGURATION ---
 API_ID = 20579940
 API_HASH = "6fc0ea1c8dacae05751591adedc177d7"
-BOT_TOKEN = "8113879008:AAGEZaE4v7OZGguk_g-J9qbRm2-yYpiwXc0"
+BOT_TOKEN = "8270046107:AAHA3k62htFOPitlivuyDgx4aS7gjcqu0bo"
 OWNER_ID = 6703335929
 MONGO_URI = "mongodb+srv://darkgangdarks_db_user:aEEYR59YEVameS1y@cluster0.iyakwh0.mongodb.net/?appName=Cluster0"
-DB_NAME = "CODE_HOST"
-PORT = int(os.environ.get("PORT", 8080))
+CHANNELS = ["alphacodex369", "Termuxcodex"]
+BOT_NAME = "ᴊᴏɪɴ ʀᴇᴍᴏᴠᴇʀ ʙᴏᴛ"
+DEVELOPER = "ᴅx-ᴄᴏᴅᴇx"
+RENDER_URL = "https://code-host.onrender.com" # <--- Ekhane host korar por link ta bosiye deben
 
-# --- STYLING ---
-def to_small_caps(text):
-    mapping = {'a': 'ᴀ', 'b': 'ʙ', 'c': 'ᴄ', 'd': 'ᴅ', 'e': 'ᴇ', 'f': 'ғ', 'g': 'ɢ', 'h': 'ʜ', 'i': 'ɪ', 'j': 'ᴊ', 'k': 'ᴋ', 'l': 'ʟ', 'm': 'ᴍ', 'n': 'ɴ', 'o': 'ᴏ', 'p': 'ᴘ', 'q': 'ǫ', 'r': 'ʀ', 's': 's', 't': 'ᴛ', 'u': 'ᴜ', 'v': 'ᴠ', 'w': 'ᴡ', 'x': 'x', 'y': 'ʏ', 'z': 'ᴢ'}
-    return "".join(mapping.get(c.lower(), c) for c in text)
+# --- DATABASE SETUP ---
+db_client = AsyncIOMotorClient(MONGO_URI)
+db = db_client["DX_ID"]
+users_col = db["users"]
+groups_col = db["groups"]
 
-# --- DB & BOT ---
-mongo_client = AsyncIOMotorClient(MONGO_URI)
-db = mongo_client[DB_NAME]
-sudo_col = db["sudo_users"]
-app = Client("Niko_Host", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("JoinRemoverBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-user_sessions = {}
-active_procs = {}
+# --- KEEP ALIVE SYSTEM (RENDER) ---
+web_app = Flask(__name__)
 
-async def is_auth(uid):
-    if uid == OWNER_ID: return True
-    return await sudo_col.find_one({"user_id": uid}) is not None
+@web_app.route('/')
+def home():
+    return "NIKO (JOIN REMOVER BOT) IS ACTIVE!"
 
-# --- COMMANDS ---
+def run_web():
+    web_app.run(host="0.0.0.0", port=8080)
+
+def keep_alive():
+    """Bot nije nijeke protik 5 minute ontor ping korbe jeno off na hoy"""
+    while True:
+        try:
+            time.sleep(300) # 5 Minutes
+            if "onrender.com" in RENDER_URL:
+                requests.get(RENDER_URL)
+                print("Pinged self to stay active! ✅")
+        except Exception as e:
+            print(f"Ping Error: {e}")
+
+# --- HELPER FUNCTIONS ---
+async def is_subscribed(user_id):
+    for channel in CHANNELS:
+        try:
+            await app.get_chat_member(channel, user_id)
+        except UserNotParticipant:
+            return False
+        except Exception:
+            return False
+    return True
+
+def parse_buttons(text):
+    buttons = []
+    if not text: return None
+    lines = text.split('\n')
+    for line in lines:
+        match = re.search(r"\[(.+?)\s*\|\s*(https?://.+)\]", line)
+        if match:
+            buttons.append([InlineKeyboardButton(match.group(1).strip(), url=match.group(2).strip())])
+    return buttons if buttons else None
+
+# --- HANDLERS ---
+
+@app.on_message(filters.service & filters.group)
+async def delete_service_msgs(_, message: Message):
+    try:
+        await message.delete()
+    except:
+        pass
+
 @app.on_message(filters.command("start") & filters.private)
-async def start(client, message):
-    if not await is_auth(message.from_user.id): return
-    
-    txt = f"<b>👋 {to_small_caps('Welcome Master')}!</b>\n\n<blockquote>I am <b>NIKO</b> by DX-CODEX.\nAdvanced Python Hosting Engine.</blockquote>"
-    btns = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"🚀 {to_small_caps('Host Python')}", callback_data="host_init")],
-        [InlineKeyboardButton(f"📂 {to_small_caps('My Projects')}", callback_data="my_projs")]
-    ])
-    await message.reply(txt, reply_markup=btns)
+async def start_handler(_, message: Message):
+    user_id = message.from_user.id
+    if not await users_col.find_one({"_id": user_id}):
+        await users_col.insert_one({"_id": user_id, "username": message.from_user.username})
 
-@app.on_message(filters.command("sudo") & filters.user(OWNER_ID))
-async def sudo_cmd(client, message):
-    args = message.text.split()
-    if len(args) < 3: return
-    uid = int(args[2])
-    if args[1] == "add":
-        await sudo_col.update_one({"user_id": uid}, {"$set": {"user_id": uid}}, upsert=True)
-        await message.reply("✅ Added.")
-    elif args[1] == "remove":
-        await sudo_col.delete_one({"user_id": uid})
-        await message.reply("🗑 Removed.")
+    if not await is_subscribed(user_id):
+        buttons = [
+            [InlineKeyboardButton("ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ 1", url=f"https://t.me/{CHANNELS[0]}")],
+            [InlineKeyboardButton("ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ 2", url=f"https://t.me/{CHANNELS[1]}")],
+            [InlineKeyboardButton("ᴠᴇʀɪғʏ", callback_data="verify_user")]
+        ]
+        await message.reply_text(
+            f"<b>ʜᴇʟʟᴏ {message.from_user.mention}! 👋</b>\n\n"
+            f"ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ <b>{BOT_NAME}</b>.\n\n"
+            f"ʏᴏᴜ ᴍᴜsᴛ ᴊᴏɪɴ ᴏᴜʀ ᴄʜᴀɴɴᴇʟs ᴛᴏ ᴜsᴇ ᴛʜɪs ʙᴏᴛ.\n\n"
+            f"<b>ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+        return
 
-# --- CALLBACKS (OPTIMIZED) ---
-@app.on_callback_query()
-async def cb_handler(client, cb: CallbackQuery):
-    await cb.answer() # INSTANT RESPONSE - FIXES LAG
-    data = cb.data
-    uid = cb.from_user.id
-
-    if data == "host_init":
-        pid = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        path = f"projects/{pid}"
-        os.makedirs(path, exist_ok=True)
-        user_sessions[uid] = {"state": "file", "path": path, "id": pid}
-        await cb.message.edit(f"<b>📂 {to_small_caps('Project')}:</b> <code>{pid}</code>\n\nSend .py file or paste code.")
-
-    elif data == "my_projs":
-        if not os.path.exists("projects"): return await cb.answer("Empty", show_alert=True)
-        projs = os.listdir("projects")
-        if not projs: return await cb.answer("No Projects", show_alert=True)
-        kb = [[InlineKeyboardButton(f"📁 {p}", callback_data=f"view_{p}")] for p in projs]
-        kb.append([InlineKeyboardButton("🔙 Back", callback_data="home")])
-        await cb.message.edit(f"<b>🗂 {to_small_caps('Your Projects')}</b>", reply_markup=InlineKeyboardMarkup(kb))
-
-    elif data.startswith("view_"):
-        pid = data.split("_")[1]
-        path = f"projects/{pid}"
-        files = os.listdir(path) if os.path.exists(path) else []
-        txt = f"<b>📂 ID:</b> <code>{pid}</code>\n\n" + "\n".join([f"📄 {f}" for f in files])
-        kb = [[InlineKeyboardButton("▶️ Run", callback_data=f"run_{pid}_main.py")], 
-              [InlineKeyboardButton("🗑 Delete", callback_data=f"del_{pid}")],
-              [InlineKeyboardButton("🔙 Back", callback_data="my_projs")]]
-        await cb.message.edit(txt, reply_markup=InlineKeyboardMarkup(kb))
-
-    elif data.startswith("del_"):
-        pid = data.split("_")[1]
-        shutil.rmtree(f"projects/{pid}", ignore_errors=True)
-        await cb.answer("🗑 Deleted", show_alert=True)
-        await cb.message.edit("Project removed.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="my_projs")]]))
-
-    elif data.startswith("run_"):
-        _, pid, file = data.split("_")
-        await run_engine(client, cb, pid, file)
-
-    elif data == "home":
-        await start(client, cb.message)
-
-# --- ASYNC FILE RECEIVE ---
-@app.on_message(filters.private & (filters.document | filters.text))
-async def uploader(client, message: Message):
-    uid = message.from_user.id
-    if uid not in user_sessions: return
-    sess = user_sessions[uid]
-    
-    if sess["state"] == "file":
-        if message.document and message.document.file_name.endswith(".py"):
-            fpath = await message.download(file_name=sess["path"] + "/")
-            sess["file"] = os.path.basename(fpath)
-            await ask_req(message, sess)
-        elif message.text:
-            sess["tmp_code"] = message.text
-            sess["state"] = "name"
-            await message.reply("📝 Enter filename (e.g. main.py):")
-
-    elif sess["state"] == "name":
-        fname = message.text if message.text.endswith(".py") else message.text + ".py"
-        async with aiofiles.open(f"{sess['path']}/{fname}", mode='w') as f:
-            await f.write(sess["tmp_code"])
-        sess["file"] = fname
-        await ask_req(message, sess)
-
-    elif sess["state"] == "req":
-        if message.document: await message.download(file_name=sess["path"] + "/requirements.txt")
-        else:
-            async with aiofiles.open(f"{sess['path']}/requirements.txt", mode='w') as f:
-                await f.write(message.text)
-        await finish_setup(message, sess)
-
-async def ask_req(m, sess):
-    sess["state"] = "req"
-    kb = InlineKeyboardMarkup([[InlineKeyboardButton("⏭ Skip", callback_data=f"skip_{sess['id']}")]])
-    await m.reply("📦 Send requirements.txt or package names (e.g. requests telethon):", reply_markup=kb)
-
-@app.on_callback_query(filters.regex(r"skip_(.+)"))
-async def skip_req(c, cb):
-    await cb.answer()
-    sess = user_sessions.get(cb.from_user.id)
-    if sess: await finish_setup(cb.message, sess)
-
-async def finish_setup(m, sess):
-    pid = sess["id"]
-    await m.reply(f"✅ Setup Done for <code>{pid}</code>", 
-                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚀 Open Project", callback_data=f"view_{pid}")]]))
-    user_sessions.pop(m.chat.id, None)
-
-# --- LIVE CONSOLE ENGINE ---
-async def run_engine(client, cb, pid, file):
-    path = f"projects/{pid}"
-    await cb.message.edit("🚀 <b>Initializing Console...</b>")
-    
-    # Pip install if req exists
-    if os.path.exists(f"{path}/requirements.txt"):
-        p = await asyncio.create_subprocess_shell(f"pip install -r {path}/requirements.txt")
-        await p.wait()
-
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable, f"{path}/{file}",
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=path
+    await message.reply_text(
+        f"<b>ᴡᴇʟᴄᴏᴍᴇ ʙᴀᴄᴋ! ✨</b>\n\nɪ ᴄᴀɴ ʀᴇᴍᴏᴠᴇ ᴀʟʟ sᴇʀᴠɪᴄᴇ ᴍᴇssᴀɢᴇs ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ.\n\n"
+        f"<b>ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ", url=f"https://t.me/{app.me.username}?startgroup=true")]])
     )
-    active_procs[pid] = proc
-    log = ""
-    last_upd = 0
 
-    async def stream_logs(stream):
-        nonlocal log, last_upd
-        while True:
-            line = await stream.readline()
-            if not line: break
-            log += line.decode()
-            if len(log) > 3000: log = log[-3000:]
-            if time.time() - last_upd > 3: # 3 sec throttle to avoid lag
-                try:
-                    await cb.message.edit(f"<b>🖥 {to_small_caps('Live Console')}</b>\n<pre>{log}</pre>")
-                    last_upd = time.time()
-                except: pass
+@app.on_callback_query(filters.regex("verify_user"))
+async def verify_callback(_, query):
+    if await is_subscribed(query.from_user.id):
+        await query.message.edit_text(
+            f"<b>ᴠᴇʀɪғɪᴄᴀᴛɪᴏɴ sᴜᴄᴄᴇssғᴜʟ! ✅</b>\n\nᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ ᴀɴᴅ ᴍᴀᴋᴇ ᴍᴇ ᴀᴅᴍɪɴ.\n\n"
+            f"<b>ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ", url=f"https://t.me/{app.me.username}?startgroup=true")]])
+        )
+    else:
+        await query.answer("⚠️ ᴘʟᴇᴀsᴇ ᴊᴏɪɴ ʙᴏᴛʜ ᴄʜᴀɴɴᴇʟs!", show_alert=True)
 
-    await asyncio.gather(stream_logs(proc.stdout), stream_logs(proc.stderr))
-    await proc.wait()
-    await cb.message.edit(f"<b>✅ {to_small_caps('Process Finished')}</b>\n<pre>{log[-3500:]}</pre>")
+@app.on_message(filters.new_chat_members)
+async def on_join_group(_, message: Message):
+    if any(m.id == (await app.get_me()).id for m in message.new_chat_members):
+        if not await groups_col.find_one({"_id": message.chat.id}):
+            await groups_col.insert_one({"_id": message.chat.id, "title": message.chat.title})
+        await message.reply_text(f"<b>{BOT_NAME} sᴛᴀʀᴛᴇᴅ! 🛡️</b>\n\n<b>ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>")
 
-# --- RENDER KEEP ALIVE & MAIN ---
-async def h(r): return web.Response(text="NIKO ACTIVE")
+@app.on_message(filters.command("user") & filters.user(OWNER_ID))
+async def export_users(_, message: Message):
+    msg = await message.reply_text("<code>ᴘʀᴏᴄᴇssɪɴɢ...</code>")
+    count_u = await users_col.count_documents({})
+    count_g = await groups_col.count_documents({})
+    
+    content = f"COUNT: {count_u + count_g}\n\n"
+    content += "--- DATA ---\n"
+    async for u in users_col.find({}): content += f"U: {u['_id']} | @{u.get('username','N/A')}\n"
+    async for g in groups_col.find({}): content += f"G: {g['_id']} | {g.get('title','N/A')}\n"
+        
+    with open("database.txt", "w", encoding="utf-8") as f: f.write(content)
+    await message.reply_document("database.txt", caption=f"<b>ᴅᴀᴛᴀʙᴀsᴇ ᴇxᴘᴏʀᴛᴇᴅ 📁\nᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>")
+    os.remove("database.txt")
+    await msg.delete()
 
-async def start_all():
-    s = web.Application(); s.router.add_get("/", h)
-    runner = web.AppRunner(s); await runner.setup()
-    await web.TCPSite(runner, "0.0.0.0", PORT).start()
-    await app.start()
-    logger.info("NIKO STARTED")
-    await idle()
+@app.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
+async def broadcast_handler(_, message: Message):
+    if not message.reply_to_message:
+        return await message.reply_text("ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴍᴇssᴀɢᴇ!")
+    
+    reply = message.reply_to_message
+    msg = await message.reply_text("<code>ʙʀᴏᴀᴅᴄᴀsᴛɪɴɢ...</code>")
+    
+    ids = []
+    async for u in users_col.find({}): ids.append(u["_id"])
+    async for g in groups_col.find({}): ids.append(g["_id"])
+    
+    text = reply.text or reply.caption or ""
+    parsed_btns = parse_buttons(text)
+    btn = InlineKeyboardMarkup(parsed_btns) if parsed_btns else None
+    clean_text = re.sub(r"\[.+?\|.+?\]", "", text).strip()
+    
+    success = 0
+    for target in list(set(ids)):
+        try:
+            await reply.copy(target, caption=clean_text if clean_text else None, reply_markup=btn, parse_mode=enums.ParseMode.HTML)
+            success += 1
+            await asyncio.sleep(0.3)
+        except: pass
+
+    await msg.edit_text(f"<b>ʙʀᴏᴀᴅᴄᴀsᴛ ᴅᴏɴᴇ! ✅</b>\n\nᴛᴏᴛᴀʟ: {success}\n<b>ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>")
 
 if __name__ == "__main__":
-    try:
-        import uvloop
-        uvloop.install()
-    except: pass
-    asyncio.get_event_loop().run_until_complete(start_all())
+    Thread(target=run_web).start()
+    Thread(target=keep_alive).start()
+    print("Bot is starting...")
+    app.run()
