@@ -3,8 +3,4 @@ tgcrypto
 motor
 dnspython
 aiohttp
-io
-os
-sys
-asyncio
-shutil
+uvloop
