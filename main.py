@@ -7,12 +7,15 @@ import time
 import random
 import string
 import traceback
-import subprocess
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 from pyrogram.errors import MessageNotModified
 from motor.motor_asyncio import AsyncIOMotorClient
 from aiohttp import web
+
+# --- LOGGING SETUP ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # --- CONFIGURATION ---
 API_ID = 20579940
@@ -45,9 +48,7 @@ projects_collection = db["projects"]
 app = Client("Niko_Host_Bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # --- GLOBAL STATES ---
-# Format: {user_id: {"state": "waiting_file", "path": "path/to/folder"}}
 user_sessions = {}
-# Active processes: {project_id: process_object}
 active_processes = {}
 
 # --- HELPER FUNCTIONS ---
@@ -60,19 +61,6 @@ async def is_authorized(user_id):
 
 def get_random_id():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-
-# --- WEB SERVER (KEEP ALIVE) ---
-async def web_server():
-    async def handle(request):
-        return web.Response(text="NIKO HOSTING BOT IS RUNNING...")
-
-    webapp = web.Application()
-    webapp.router.add_get('/', handle)
-    runner = web.AppRunner(webapp)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', PORT)
-    await site.start()
-    print(f"Web server started on port {PORT}")
 
 # --- BOT COMMANDS ---
 
@@ -95,9 +83,10 @@ async def start_command(client, message):
          InlineKeyboardButton(f"⚙️ {to_small_caps('Sudo Manager')}", callback_data="sudo_help")]
     ])
     
-    await message.reply_animation(
-        animation="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaHl5bnZ5aHl5bnZ5/3o7qE1YN7aQfVUTtlW/giphy.gif", # Just a placeholder tech gif
-        caption=txt,
+    # Using a static image instead of animation to be safe on all clients, or just text if preferred.
+    # Reverting to simple reply to avoid media errors if URL expires.
+    await message.reply(
+        text=txt,
         reply_markup=buttons
     )
 
@@ -155,11 +144,11 @@ async def handle_uploads(client, message: Message):
         if message.document:
             if not message.document.file_name.endswith(".py"):
                 return await message.reply("❌ Please send a valid <b>.py</b> file.")
-            file_path = await message.download(file_name=os.path.join(folder_path, message.document.file_name))
+            await message.download(file_name=os.path.join(folder_path, message.document.file_name))
             filename = message.document.file_name
         
         elif message.text:
-            # If user sends code directly
+            if message.text.startswith("/"): return # Ignore commands
             code = message.text
             session["temp_code"] = code
             session["state"] = "naming_file"
@@ -188,7 +177,6 @@ async def handle_uploads(client, message: Message):
             await message.download(file_name=os.path.join(folder_path, "requirements.txt"))
             await install_and_ready(message, folder_path, session["main_file"], session["id"])
         elif message.text:
-            # Create requirements.txt from text
             with open(os.path.join(folder_path, "requirements.txt"), "w") as f:
                 f.write(message.text)
             await install_and_ready(message, folder_path, session["main_file"], session["id"])
@@ -231,8 +219,7 @@ async def install_and_ready(message, folder_path, main_file, proj_id, skip=False
             )
             await proc.communicate()
     
-    # Ready to run
-    user_sessions.pop(message.chat.id, None) # Clear session
+    user_sessions.pop(message.chat.id, None) 
     
     btns = InlineKeyboardMarkup([
         [InlineKeyboardButton(f"▶️ {to_small_caps('Run File')}", callback_data=f"run_{proj_id}_{main_file}")],
@@ -257,19 +244,16 @@ async def run_project(client, cb: CallbackQuery):
     
     await cb.message.edit(f"🚀 <b>{to_small_caps('Initializing Live Console...')}</b>")
     
-    # Running the script
     process = await asyncio.create_subprocess_exec(
         sys.executable, file_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        cwd=folder # Run inside the project folder
+        cwd=folder
     )
     
     active_processes[proj_id] = process
     
-    # Console Loop
     output_buffer = ""
-    start_time = time.time()
     last_edit = 0
     
     console_template = (
@@ -291,20 +275,18 @@ async def run_project(client, cb: CallbackQuery):
                 break
             decoded = line.decode('utf-8', errors='ignore')
             output_buffer += decoded
-            
-            # Keep buffer size manageable (last 2000 chars)
             if len(output_buffer) > 2000:
                 output_buffer = output_buffer[-2000:]
 
             now = time.time()
-            if now - last_edit > 2: # Edit every 2 seconds to avoid flood wait
+            if now - last_edit > 2.5: # Increased delay slightly for safety
                 try:
                     await msg.edit(console_template.format(output_buffer), reply_markup=stop_btn)
                     last_edit = now
                 except MessageNotModified:
                     pass
-                except Exception as e:
-                    print(f"Edit error: {e}")
+                except Exception:
+                    pass
 
     await asyncio.gather(
         read_stream(process.stdout),
@@ -314,14 +296,18 @@ async def run_project(client, cb: CallbackQuery):
     await process.wait()
     
     final_status = "✅ Finished" if process.returncode == 0 else "❌ Crashed"
-    await msg.edit(
-        f"<b>🖥 {to_small_caps('Console Terminated')}</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<pre>{output_buffer[-3500:]}</pre>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<b>Status:</b> {final_status}",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="host_start")]])
-    )
+    try:
+        await msg.edit(
+            f"<b>🖥 {to_small_caps('Console Terminated')}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"<pre>{output_buffer[-3500:]}</pre>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b>Status:</b> {final_status}",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="host_start")]])
+        )
+    except:
+        pass
+        
     if proj_id in active_processes:
         del active_processes[proj_id]
 
@@ -396,17 +382,38 @@ async def delete_project(client, cb):
 
 @app.on_callback_query(filters.regex("back_home"))
 async def back_home(client, cb):
-    # Resetting the start message
     await start_command(client, cb.message)
 
-# --- ENTRY POINT ---
-if __name__ == "__main__":
+# --- WEB SERVER & MAIN LOOP ---
+
+async def web_handler(request):
+    return web.Response(text="NIKO HOSTING BOT IS RUNNING...")
+
+async def main():
+    # Create projects dir
     if not os.path.exists("projects"):
         os.makedirs("projects")
+
+    # 1. Start Web Server (For Render Keep-Alive)
+    server = web.Application()
+    server.router.add_get('/', web_handler)
+    runner = web.AppRunner(server)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    await site.start()
+    logger.info(f"Web server started on port {PORT}")
+
+    # 2. Start Bot
+    logger.info("Starting Bot...")
+    await app.start()
+    logger.info("Bot Started as NIKO")
+
+    # 3. Idle (Keep running)
+    await idle()
     
-    # Start Web Server in Background
+    # 4. Stop
+    await app.stop()
+
+if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.create_task(web_server())
-    
-    print("🤖 NIKO IS STARTING...")
-    app.run()
+    loop.run_until_complete(main())
