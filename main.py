@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-NIKO-V13: CLOUD-GOD (RENDER PORT FIXED)
+NIKO-V14: FAST-DEPLOY EDITION (DARK-X PRO)
 Developer: DX-CODEX (NIKO)
-Status: Anti-Disconnect & High-Priority Voice
+Status: Fixed Port-Binding & Ultra-Voice Persistence
 """
 
 import socket
@@ -16,13 +16,12 @@ import requests
 r='\033[1;91m'; p='\033[1;95m'; y='\033[1;93m'
 g='\033[1;92m'; n='\033[1;0m'; b='\033[1;94m'; c='\033[1;96m'
 
-class NikoCloudGod:
-    def __init__(self, host='0.0.0.0'):
-        # Render dynamic port configuration (Fixes: No open HTTP ports error)
+class NikoFastEngine:
+    def __init__(self):
+        # Render-er port prothomei fix kore deya holo jate restart na hoy
         self.port = int(os.environ.get("PORT", 10000)) 
-        self.host = host
+        self.host = '0.0.0.0'
         self.buffer_size = 4194304 
-        # Manual Render URL Added
         self.render_url = "https://code-host.onrender.com"
         self.public_ip = "code-host.onrender.com"
 
@@ -38,14 +37,14 @@ class NikoCloudGod:
             pass
 
     def anti_sleep_ping(self):
-        """Keeps Render instance active 24/7"""
-        time.sleep(10) # Wait for server to start
+        """Keeps Render instance active with 3-minute interval"""
+        time.sleep(20)
         while True:
             try:
-                requests.get(self.render_url, timeout=10)
+                requests.get(self.render_url, timeout=5)
             except:
                 pass
-            time.sleep(300)
+            time.sleep(180) # Faster heartbeats for stability
 
     def banner(self):
         os.system('clear')
@@ -59,11 +58,11 @@ class NikoCloudGod:
         print(f"{y}      |D|A|R|K|-|X|")
         print(f"{y}      +-+-+-+-+-+-+")
         print(f"{c}="*65)
-        print(f"{y}  [+] CLOUD URL : {p}{self.render_url}")
-        print(f"{y}  [+] PORT      : {p}{self.port} (AUTO-DETECTED)")
-        print(f"{y}  [+] STATUS    : {g}GOD MODE ONLINE")
+        print(f"{y}  [+] DEPLOYMENT: {g}SUCCESSFUL & FAST")
+        print(f"{y}  [+] ENDPOINT  : {p}{self.render_url}")
+        print(f"{y}  [+] VOICE     : {g}IMMORTAL CLOUD BOOSTER")
         print(f"{c}-"*65)
-        print(f"{b}  [ DIRECT PROXY LINK ]")
+        print(f"{b}  [ DIRECT WHATSAPP LINK ]")
         print(f"{c}  {proxy_link}")
         print(f"{c}="*65)
         print(f"{b}  ID  |     SOURCE      |    TRAFFIC TYPE   |    QUALITY")
@@ -75,16 +74,14 @@ class NikoCloudGod:
             if not header_data:
                 return
 
-            # CRITICAL FIX: Render Health Check Bypass
-            # Render scans for a web response on the port to confirm it's open
+            # Fast Response for Render Health Checks
             if b"GET /" in header_data or b"HEAD /" in header_data:
-                response = (
+                client_sock.sendall(
                     b"HTTP/1.1 200 OK\r\n"
                     b"Content-Type: text/plain\r\n"
-                    b"Content-Length: 16\r\n\r\n"
-                    b"NIKO ENGINE LIVE"
+                    b"Connection: close\r\n\r\n"
+                    b"NIKO LIVE"
                 )
-                client_sock.sendall(response)
                 return
 
             request_str = header_data.decode('utf-8', errors='ignore')
@@ -120,13 +117,14 @@ class NikoCloudGod:
             s1.close(); s2.close()
 
     def run(self):
+        # Start anti-sleep
         threading.Thread(target=self.anti_sleep_ping, daemon=True).start()
         
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         
-        # Binding to 0.0.0.0 is essential for Render
-        server.bind(('0.0.0.0', self.port))
+        # Immediate binding to the port
+        server.bind((self.host, self.port))
         server.listen(1000)
         self.banner()
         
@@ -141,4 +139,4 @@ class NikoCloudGod:
                 continue
 
 if __name__ == "__main__":
-    NikoCloudGod().run()
+    NikoFastEngine().run()
