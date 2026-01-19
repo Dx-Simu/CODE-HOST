@@ -1,199 +1,128 @@
+#!/usr/bin/env python3
+"""
+NIKO-V12: KERNEL-GOD MODE (DARK-X PRO)
+Feature: Auto-Link Generation & Direct WhatsApp Setup
+Developer: DX-CODEX (NIKO)
+"""
+
+import socket
+import threading
+import select
 import os
-import re
-import asyncio
-import requests
 import time
-from threading import Thread
-from flask import Flask
-from pyrogram import Client, filters, enums
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
-from pyrogram.errors import UserNotParticipant
-from motor.motor_asyncio import AsyncIOMotorClient
+import requests
 
-# --- CONFIGURATION ---
-API_ID = 20579940
-API_HASH = "6fc0ea1c8dacae05751591adedc177d7"
-BOT_TOKEN = "8270046107:AAHA3k62htFOPitlivuyDgx4aS7gjcqu0bo"
-OWNER_ID = 6703335929
-MONGO_URI = "mongodb+srv://darkgangdarks_db_user:aEEYR59YEVameS1y@cluster0.iyakwh0.mongodb.net/?appName=Cluster0"
-CHANNELS = ["alphacodex369", "Termuxcodex"]
+# DX COLORS
+r='\033[1;91m'; p='\033[1;95m'; y='\033[1;93m'
+g='\033[1;92m'; n='\033[1;0m'; b='\033[1;94m'; c='\033[1;96m'
 
-BOT_NAME = "ᴊᴏɪɴ ʀᴇᴍᴏᴠᴇʀ ʙᴏᴛ"
-DEVELOPER = "ᴅx-ᴄᴏᴅᴇx"
-RENDER_URL = "https://code-host.onrender.com"
+class NikoGodEngine:
+    def __init__(self, host='0.0.0.0'):
+        # Render dynamic port support
+        self.port = int(os.environ.get("PORT", 8888))
+        self.host = host
+        self.buffer_size = 4194304 # 4MB Massive Buffer
+        # Get public IP or Render URL
+        self.public_ip = os.environ.get("RENDER_EXTERNAL_URL", "127.0.0.1").replace("https://", "").replace("http://", "")
+        self.render_url = os.environ.get("RENDER_EXTERNAL_URL", "https://code-host.onrender.com")
 
-# --- DATABASE SETUP ---
-db_client = AsyncIOMotorClient(MONGO_URI)
-db = db_client["DX_ID"]
-users_col = db["users"]
-groups_col = db["groups"]
-
-app = Client("JoinRemoverBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-
-# --- KEEP ALIVE SYSTEM ---
-web_app = Flask(__name__)
-
-@web_app.route('/')
-def home():
-    return f"{BOT_NAME} IS ONLINE BY {DEVELOPER}"
-
-def run_web():
-    web_app.run(host="0.0.0.0", port=8080)
-
-def keep_alive():
-    while True:
+    def tune_socket(self, sock):
         try:
-            time.sleep(300)
-            requests.get(RENDER_URL)
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, 0xB8)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, self.buffer_size)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.buffer_size)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            sock.settimeout(None)
         except:
             pass
 
-# --- HELPER FUNCTIONS ---
-async def is_subscribed(user_id):
-    for channel in CHANNELS:
-        try:
-            await app.get_chat_member(channel, user_id)
-        except UserNotParticipant:
-            return False
-        except Exception:
-            return False
-    return True
+    def anti_sleep_ping(self):
+        if not self.render_url: return
+        while True:
+            try:
+                requests.get(self.render_url, timeout=10)
+            except: pass
+            time.sleep(300)
 
-def parse_buttons(text):
-    buttons = []
-    if not text: return None
-    lines = text.split('\n')
-    for line in lines:
-        match = re.search(r"\[(.+?)\s*\|\s*(https?://.+)\]", line)
-        if match:
-            buttons.append([InlineKeyboardButton(match.group(1).strip(), url=match.group(2).strip())])
-    return buttons if buttons else None
-
-ADD_ME_LINK = f"https://t.me/{{}}?startgroup=true&admin=delete_messages+invite_users+manage_video_chats+manage_chat+pin_messages"
-
-# --- HANDLERS ---
-
-# Auto Service Message Remover
-@app.on_message(filters.service & filters.group)
-async def delete_service_msgs(_, message: Message):
-    try:
-        await message.delete()
-    except:
-        pass
-
-# Start Command
-@app.on_message(filters.command("start") & filters.private)
-async def start_handler(_, message: Message):
-    user_id = message.from_user.id
-    if not await users_col.find_one({"_id": user_id}):
-        await users_col.insert_one({"_id": user_id, "username": message.from_user.username})
-
-    me = await app.get_me()
-    add_link = ADD_ME_LINK.format(me.username)
-
-    if not await is_subscribed(user_id):
-        buttons = [
-            [InlineKeyboardButton("📢 ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ 1", url=f"https://t.me/{CHANNELS[0]}")],
-            [InlineKeyboardButton("📢 ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ 2", url=f"https://t.me/{CHANNELS[1]}")],
-            [InlineKeyboardButton("💠 ᴠᴇʀɪғʏ 💠", callback_data="verify_user")]
-        ]
-        await message.reply_text(
-            f"<b>👋 ʜᴇʟʟᴏ {message.from_user.mention}!</b>\n\n"
-            f"<blockquote>ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ <b>{BOT_NAME}</b>. ᴛᴏ ᴀᴄᴄᴇss ᴍʏ ᴘᴏᴡᴇʀғᴜʟ ғᴇᴀᴛᴜʀᴇs, ʏᴏᴜ ᴍᴜsᴛ sᴜʙsᴄʀɪʙᴇ ᴛᴏ ᴏᴜʀ ᴄʜᴀɴɴᴇʟs.</blockquote>\n\n"
-            f"<b>👤 ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-        return
-
-    await message.reply_text(
-        f"<b>✨ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ {BOT_NAME} ✨</b>\n\n"
-        f"<blockquote>ɪ ᴀᴍ ɴᴏᴡ ᴀᴄᴛɪᴠᴇ ᴀɴᴅ ʀᴇᴀᴅʏ ᴛᴏ ᴄʟᴇᴀɴ ʏᴏᴜʀ ɢʀᴏᴜᴘs. ᴀᴅᴅ ᴍᴇ ᴀɴᴅ ᴍᴀᴋᴇ ᴍᴇ ᴀᴅᴍɪɴ ᴡɪᴛʜ ᴅᴇʟᴇᴛᴇ ᴘᴇʀᴍɪssɪᴏɴ.</blockquote>\n\n"
-        f"<b>🚀 sᴛᴀᴛᴜs:</b> <code>ᴀᴄᴛɪᴠᴇ</code>\n\n"
-        f"<b>👤 ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("➕ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ", url=add_link)]
-        ])
-    )
-
-# Group ID Save & Advanced Greeting Logic
-@app.on_message(filters.new_chat_members)
-async def on_join_group(_, message: Message):
-    me = await app.get_me()
-    # Check if the bot itself is added
-    if any(m.id == me.id for m in message.new_chat_members):
-        chat_id = message.chat.id
-        chat_title = message.chat.title
+    def banner(self):
+        os.system('clear')
+        # Direct WhatsApp Proxy Link logic
+        proxy_link = f"https://wa.me/proxy?host={self.public_ip}&chatPort={self.port}&mediaPort={self.port}&chatTLS=true"
         
-        # Force Save to Database
-        if not await groups_col.find_one({"_id": chat_id}):
-            await groups_col.insert_one({"_id": chat_id, "title": chat_title})
-            db_status = "✅ sᴀᴠᴇᴅ ᴛᴏ ᴅᴀᴛᴀʙᴀsᴇ"
-        else:
-            db_status = "🔄 ᴀʟʀᴇᴀᴅʏ ɪɴ ᴅᴀᴛᴀʙᴀsᴇ"
-        
-        # Advanced Style Greeting Message
-        await message.reply_text(
-            f"<b>🛡️ {BOT_NAME} ɪs ɴᴏᴡ ᴏɴʟɪɴᴇ!</b>\n\n"
-            f"<blockquote>ʜᴇʟʟᴏ ᴇᴠᴇʀʏᴏɴᴇ! ɪ ᴀᴍ ʏᴏᴜʀ ᴀᴅᴠᴀɴᴄᴇᴅ ɢʀᴏᴜᴘ ᴍᴀɴᴀɢᴇʀ. ɪ ᴡɪʟʟ ᴀᴜᴛᴏ-ᴅᴇʟᴇᴛᴇ ᴀʟʟ sᴇʀᴠɪᴄᴇ ᴍᴇssᴀɢᴇs ᴛᴏ ᴋᴇᴇᴘ ᴛʜɪs ᴄʜᴀᴛ ᴄʟᴇᴀɴ.</blockquote>\n\n"
-            f"<b>📊 ɢʀᴏᴜᴘ ᴀɴᴀʟʏᴛɪᴄs:</b>\n"
-            f"📝 ᴛɪᴛʟᴇ: <b>{chat_title}</b>\n"
-            f"🆔 ɪᴅ: <code>{chat_id}</code>\n"
-            f"📁 ᴅʙ: <b>{db_status}</b>\n\n"
-            f"<b>⚠️ ɴᴏᴛᴇ:</b> ᴍᴀᴋᴇ sᴜʀᴇ ɪ ʜᴀᴠᴇ 'ᴅᴇʟᴇᴛᴇ ᴍᴇssᴀɢᴇs' ᴘᴇʀᴍɪssɪᴏɴ!\n\n"
-            f"<b>👤 ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>"
-        )
+        print(f"{c}="*65)
+        print(f"{g}  ╔╗╔╦╦╔═╔═╗   ╔═╗╦╔═╗╦ ╦╔╦╗╔═╗╦═╗")
+        print(f"{g}  ║║║║╠╩╗║ ║───╠╣ ║║ ╦╠═╣ ║ ║╣ ╠╦╝")
+        print(f"{g}  ╝╚╝╩╩ ╩╚═╝   ╚  ╩╚═╝╩ ╩ ╩ ╚═╝╩╚═")
+        print(f"{y}\n        +-+-+-+-+-+-+")
+        print(f"{y}        |D|A|R|K|-|X|")
+        print(f"{y}        +-+-+-+-+-+-+")
+        print(f"{c}="*65)
+        print(f"{y}  [+] STATUS  : {g}CODE MODE ACTIVE")
+        print(f"{y}  [+] PORT    : {p}{self.port}")
+        print(f"{y}  [+] IP/HOST : {p}{self.public_ip}")
+        print(f"{c}-"*65)
+        print(f"{b}  [ DIRECT PROXY LINK ]")
+        print(f"{c}  {proxy_link}")
+        print(f"{c}="*65)
+        print(f"{b}  ID  |     SOURCE      |    TRAFFIC TYPE   |    QUALITY")
+        print(f"{c}-"*65 + f"{n}")
 
-# Callback & Other Commands (No changes below)
-@app.on_callback_query(filters.regex("verify_user"))
-async def verify_callback(_, query):
-    me = await app.get_me()
-    add_link = ADD_ME_LINK.format(me.username)
-    if await is_subscribed(query.from_user.id):
-        await query.message.edit_text(
-            f"<b>✅ ᴠᴇʀɪғɪᴄᴀᴛɪᴏɴ sᴜᴄᴄᴇssғᴜʟ!</b>\n\n"
-            f"<blockquote>ʏᴏᴜ ᴄᴀɴ ɴᴏᴡ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ ᴀɴᴅ ᴇɴᴊᴏʏ sᴇʀᴠɪᴄᴇs.</blockquote>\n\n"
-            f"<b>👤 ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ", url=add_link)]])
-        )
-    else:
-        await query.answer("⚠️ ᴘʟᴇᴀsᴇ ᴊᴏɪɴ ʙᴏᴛʜ ᴄʜᴀɴɴᴇʟs ғɪʀsᴛ!", show_alert=True)
-
-@app.on_message(filters.command("user") & filters.user(OWNER_ID))
-async def export_users(_, message: Message):
-    msg = await message.reply_text("<code>📊 ᴀɴᴀʟʏᴢɪɴɢ ᴅᴀᴛᴀʙᴀsᴇ...</code>")
-    count_u = await users_col.count_documents({})
-    count_g = await groups_col.count_documents({})
-    content = f"📈 ᴛᴏᴛᴀʟ: {count_u + count_g}\n\n👤 Users: {count_u}\n👥 Groups: {count_g}\n\n"
-    async for u in users_col.find({}): content += f"U: {u['_id']} | @{u.get('username','N/A')}\n"
-    async for g in groups_col.find({}): content += f"G: {g['_id']} | {g.get('title','N/A')}\n"
-    with open("database.txt", "w", encoding="utf-8") as f: f.write(content)
-    await message.reply_document("database.txt", caption=f"<b>📁 ᴅᴀᴛᴀʙᴀsᴇ sᴛᴀᴛs</b>\n\n<b>ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>")
-    os.remove("database.txt")
-    await msg.delete()
-
-@app.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
-async def broadcast_handler(_, message: Message):
-    if not message.reply_to_message:
-        return await message.reply_text("<b>❌ ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴍᴇssᴀɢᴇ!</b>")
-    reply = message.reply_to_message
-    msg = await message.reply_text("<code>🚀 ʙʀᴏᴀᴅᴄᴀsᴛɪɴɢ...</code>")
-    ids = []
-    async for u in users_col.find({}): ids.append(u["_id"])
-    async for g in groups_col.find({}): ids.append(g["_id"])
-    text = reply.text or reply.caption or ""
-    btn = InlineKeyboardMarkup(parse_buttons(text)) if parse_buttons(text) else None
-    clean_text = re.sub(r"\[.+?\|.+?\]", "", text).strip()
-    success = 0
-    for target in list(set(ids)):
+    def bridge(self, s1, s2):
+        sockets = [s1, s2]
         try:
-            await reply.copy(target, caption=clean_text if clean_text else None, reply_markup=btn, parse_mode=enums.ParseMode.HTML)
-            success += 1
-            await asyncio.sleep(0.3)
+            while True:
+                readable, _, _ = select.select(sockets, [], [], 0.001)
+                for s in readable:
+                    data = s.recv(self.buffer_size)
+                    if not data: return
+                    target = s2 if s is s1 else s1
+                    target.sendall(data)
         except: pass
-    await msg.edit_text(f"<b>📢 ʙʀᴏᴀᴅᴄᴀsᴛ ᴅᴏɴᴇ!</b>\n\n✅ <b>sᴜᴄᴄᴇss:</b> <code>{success}</code>\n<b>👤 ᴅᴇᴠᴇʟᴏᴘᴇʀ:</b> <code>{DEVELOPER}</code>")
+        finally:
+            s1.close(); s2.close()
+
+    def handle_client(self, client_sock, addr, user_id):
+        try:
+            header_data = client_sock.recv(self.buffer_size)
+            if not header_data: return
+
+            # Render Health Check Bypass
+            if b"GET /" in header_data[:10]:
+                client_sock.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nNIKO-CODE ENGINE LIVE")
+                return
+
+            request_str = header_data.decode('utf-8', errors='ignore')
+            if 'CONNECT' in request_str:
+                target = request_str.split(' ')[1]
+                host, port = target.split(':')
+                
+                remote_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.tune_socket(remote_sock)
+                remote_sock.connect((host, int(port)))
+
+                client_sock.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                print(f" {y}[{user_id:02}]  {c}{addr[0]:<13}  {p}VOICE/SSL      {g}BOOSTED ↑↑{n}")
+                self.bridge(client_sock, remote_sock)
+        except: pass
+        finally: client_sock.close()
+
+    def run(self):
+        threading.Thread(target=self.anti_sleep_ping, daemon=True).start()
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind((self.host, self.port))
+        server.listen(1000)
+        self.banner()
+        
+        id_gen = 0
+        while True:
+            try:
+                client_sock, addr = server.accept()
+                id_gen += 1
+                self.tune_socket(client_sock)
+                threading.Thread(target=self.handle_client, args=(client_sock, addr, id_gen), daemon=True).start()
+            except: continue
 
 if __name__ == "__main__":
-    Thread(target=run_web).start()
-    Thread(target=keep_alive).start()
-    print("Bot is starting...")
-    app.run()
+    NikoGodEngine().run()
